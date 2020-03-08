@@ -1,14 +1,19 @@
 #! /usr/bin/env bash
 # preparing python modules for AWS layer:
 
+# input arguments: 
+# name of S3 bucket where layer gets copied
+# requirements.txt file specifying the dependencies
+# (and can incude things like specific Python runtime)
+layername="$1"
+reqsfile="$2"
+myBucketName="$3"
 # install files in the input (requirements.txt) locally
 # the main 'parameter' here is just the python package name
 mkdir -p staging/python
 
-# can be a specific version
-module_name="numpy==1.18"
 # if the module has dependencies, consider whether to use --no-deps
-pip3 install ${module_name} -t ./staging/python
+pip3 install -r ${reqsfile} -t ./staging/python
 
 # remove symbols from compiled objects to reduce file size:
 # note that this appears to backfire mysteriously! Some of the
@@ -17,21 +22,21 @@ pip3 install ${module_name} -t ./staging/python
 
 # -r is 'recurse into directories', -9 is 'compress better'
 # zip will include the extra layer of directories so we must cd into/out of it...
-cd staging && zip -r9 ../numpylayer.zip python && cd ../
+zipf="../${layername}_data.zip"
+cd staging && zip -r9 "${zipf}" python && cd ../
 
 # the bucket name needs to be coordinated with the account holder
 # running this command
-myBucketName="num-py-layer"
-aws s3 cp numpylayer.zip "s3://${myBucketName}"
+aws s3 cp "${zipf}" "s3://${myBucketName}"
 
 # now create (or update if it already exists) the layer
 # use --zip-file arg rather than --content if publishing local content as a layer
+# the 'description' field would need to be updated manually
 aws lambda publish-layer-version \
-    --layer-name py37numpy \
-    --description "numpy 1.17" \
+    --layer-name ${layername} \
+    --description "a layer" \
     --compatible-runtimes python3.7 python3.8 \
-    --content S3Bucket=num-py-layer,S3Key=numpylayer.zip
-
+    --content S3Bucket=${myBucketName},S3Key=${zipf}
 
 # publishing a version of a function
 # given a directory , zip the contents and
