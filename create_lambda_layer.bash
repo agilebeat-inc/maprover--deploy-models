@@ -15,6 +15,8 @@ mkdir -p staging/python
 # if the module has dependencies, consider whether to use --no-deps
 pip3 install -r ${reqsfile} -t ./staging/python
 
+AWS_CMD="aws2"
+
 # remove symbols from compiled objects to reduce file size:
 # note that this appears to backfire mysteriously! Some of the
 # numpy binaries become much LARGER after strip
@@ -22,17 +24,22 @@ pip3 install -r ${reqsfile} -t ./staging/python
 
 # -r is 'recurse into directories', -9 is 'compress better'
 # zip will include the extra layer of directories so we must cd into/out of it...
-zipf="../${layername}_data.zip"
-cd staging && zip -r9 "${zipf}" python && cd ../
+zipf="${layername}_data.zip"
+cd staging && zip -r9 "../${zipf}" python && cd ../
+echo "Total zipped layer size:"
+du -sh ${zipf}
+rm -r staging
 
 # the bucket name needs to be coordinated with the account holder
 # running this command
-aws s3 cp "${zipf}" "s3://${myBucketName}"
+${AWS_CMD} s3 cp "${zipf}" "s3://${myBucketName}"
+
+# clean up the files we don't need:
 
 # now create (or update if it already exists) the layer
 # use --zip-file arg rather than --content if publishing local content as a layer
 # the 'description' field would need to be updated manually
-aws lambda publish-layer-version \
+${AWS_CMD} lambda publish-layer-version \
     --layer-name ${layername} \
     --description "a layer" \
     --compatible-runtimes python3.7 python3.8 \

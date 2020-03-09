@@ -10,7 +10,7 @@ entrypoint="lambda_example.lambda_handler"
 lambda_name="petri"
  # this can have multiple entries, separated by spaces
  # apparently we need to use full ARNs here, not just the name
-layer_deps="arn:aws:lambda:us-east-1:531395337930:layer:py37numpy:2"
+layer_deps="arn:aws:lambda:us-east-1:531395337930:layer:numpillow:1"
 
 AWS_CMD="aws2" # if using version 1 of the AWS CLI, this should just be AWS
 
