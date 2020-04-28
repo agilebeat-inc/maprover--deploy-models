@@ -1,6 +1,6 @@
 import numpy as np
 import json
-import os
+import os, re
 import datetime as dt
 import base64, io # deserializing tiles
 from PIL import Image
@@ -18,6 +18,7 @@ inf = s3.Object('abobob','datasrc/sacred.txt')
 # reading a file from an S3 bucket involves rather horrendous syntax:
 bigtxt = inf.get()['Body'].read().decode('utf-8')[:1000000].split('\n')
 
+# remove once tensorflow layer is connected!
 if False:
     import tensorflow as tf
     # loading tensorflow graph and weights:
@@ -49,6 +50,14 @@ def image_to_array(image):
     # why do we need to expand dims?
     return np.expand_dims(rgb_img, axis=0)
 
+# example testing tile decoding:
+# png_prefix = 'data:image/png;base64,'
+# from b64tile import base64_test_string as b64s
+# if b64s.startswith(png_prefix):
+#     b64s = b64s[len(png_prefix):]
+
+# deserialize_image(b64s)
+
 def model1():
     pass
 
@@ -58,13 +67,6 @@ def model2():
 def model3():
     pass
 
-# mapping of categories to models
-PREDICTION_CATEGORIES = {
-    "railroad": model1,
-    "gumball": model2,
-    "snorlax": model1,
-    "arbitrage": model3
-}
 
 if False:
     img_loc = '/mnt/z/webpage/media/4-gLaCFz7JE.jpg'
@@ -86,7 +88,7 @@ def random_line():
     outf = s3.Object(OUT_BUCKET, outKey)
     outf.put(
         ACL = 'bucket-owner-full-control',
-        Body = line.encode(), # defaults to UTF-8,
+        Body = line.encode(), # defaults to UTF-8
         ContentEncoding = 'UTF-8'
     )
     # if responding to an HTTP request, we should return a properly formatted HTTP response
@@ -99,12 +101,21 @@ def random_line():
     }
     return HTTP_response
 
+# mapping of categories to models
+PREDICTION_CATEGORIES = {
+    "railroad": model1,
+    "gumball": model2,
+    "snorlax": model1,
+    "contango": model3
+}
+
 def lambda_handler(event, context):
     """
     'event' is an HTTP request with fields:
-    x,y,z: integers giving tile coordinates and zoom (not currently used unless we want to cache)
-    tile: a base64-encoded string which gets turned into a numeric array for prediction
+    x,y,z: integers giving tile coordinates and zoom (not currently used, just makes it easier to keep the info bundled together?)
+    tile_base64: a base64-encoded string which gets turned into a numeric array for prediction
     category: string, indicating which category we want to predict
+    can check context.authorizer.claims for JSON Web Token data via Cognito
     """
     return random_line() # remove when possible
     # once the models are ready, this can dispatch to them
@@ -118,10 +129,10 @@ def lambda_handler(event, context):
     the_model = PREDICTION_CATEGORIES[category]
     
     # create a numeric array from the input tile:
-    img = deserialize_image(event['tile'])
+    img = deserialize_image(event['tile_base64'])
     tile_array = image_to_array(img)
     pred = the_model(tile_array)
-    # the model should return a dict of (category: prob) items
+    # the model should return a dict of (category: prob) items?
     pred_prob = pred[category]
     HTTP_response = {
         'statusCode': 200,

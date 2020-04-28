@@ -8,8 +8,7 @@
 layername="$1"
 reqsfile="$2"
 myBucketName="$3"
-# install files in the input (requirements.txt) locally
-# the main 'parameter' here is just the python package name
+
 mkdir -p staging/python
 
 # if the module has dependencies, consider whether to use --no-deps
@@ -28,13 +27,14 @@ zipf="${layername}_data.zip"
 cd staging && zip -r9 "../${zipf}" python && cd ../
 echo "Total zipped layer size:"
 du -sh ${zipf}
+
+# clean up the files we don't need:
 rm -r staging
 
 # the bucket name needs to be coordinated with the account holder
 # running this command
 ${AWS_CMD} s3 cp "${zipf}" "s3://${myBucketName}"
 
-# clean up the files we don't need:
 
 # now create (or update if it already exists) the layer
 # use --zip-file arg rather than --content if publishing local content as a layer
