@@ -2,36 +2,10 @@ import numpy as np
 import json
 import os, re
 import datetime as dt
+
 import base64, io # deserializing tiles
 from PIL import Image
-
-
-
-# AWS package
-import boto3
-
-s3 = boto3.resource('s3')
-
-# a static resource we'd like to use but not re-load every time
-# that the lambda function is called:
-inf = s3.Object('abobob','datasrc/sacred.txt')
-# reading a file from an S3 bucket involves rather horrendous syntax:
-bigtxt = inf.get()['Body'].read().decode('utf-8')[:1000000].split('\n')
-
-# remove once tensorflow layer is connected!
-if False:
-    import tensorflow as tf
-    # loading tensorflow graph and weights:
-    tf_model = s3.Object('abobob','tf/tf_model.pb')
-    weightsdata = tf_model.get()['Body'].read()
-    graph_def = tf.GraphDef()
-    graph_def.ParseFromString(weightsdata)
-
-# name of S3 bucket where a result is written
-OUT_BUCKET = 'abobobout'
-
-
-rg = np.random.default_rng()
+import tensorflow as tf
 
 def deserialize_image(img_string: str):
     img = base64.urlsafe_b64decode(img_string)
@@ -50,29 +24,67 @@ def image_to_array(image):
     # why do we need to expand dims?
     return np.expand_dims(rgb_img, axis=0)
 
+is_aws = 'AWS_REGION' in os.environ
+
+# read in pb file and re-hydrate it into a tf.GraphDef
+if is_aws: 
+    import boto3
+    s3 = boto3.resource('s3')
+    tf_model = s3.Object('abobob','tf/tf_model_motorway.pb')
+    raw_data = tf_model.get()['Body'].read()
+else:
+    with open("/mnt/c/Users/skm/Dropbox/AWS/tf_model_motorway.pb",'rb') as fh:
+        raw_data = fh.read()
+
+motor_model = tf.GraphDef()
+motor_model.ParseFromString(raw_data)
+
+
+# inf = s3.Object('abobob','datasrc/sacred.txt')
+# reading a file from an S3 bucket involves rather horrendous syntax:
+# bigtxt = inf.get()['Body'].read().decode('utf-8')[:1000000].split('\n')
+# rg = np.random.default_rng()
+
+# name of S3 bucket where a result is written
+# OUT_BUCKET = 'abobobout'
+
 # example testing tile decoding:
 # png_prefix = 'data:image/png;base64,'
+# os.chdir("/mnt/c/Users/skm/Dropbox/Agilebeat/maprover-deploy")
 # from b64tile import base64_test_string as b64s
 # if b64s.startswith(png_prefix):
 #     b64s = b64s[len(png_prefix):]
 
-# deserialize_image(b64s)
-
-def model1():
-    pass
-
-def model2():
-    pass
-
-def model3():
-    pass
+# img = deserialize_image(b64s)
+# input_array = image_to_array(img)
 
 
-if False:
-    img_loc = '/mnt/z/webpage/media/4-gLaCFz7JE.jpg'
-    img_enc = serialize_image(img_loc)
-    img_dec = deserialize_image(img_enc)
-    img_arr = image_to_array(img_dec)
+# load the graph from the GraphDef object
+motor_g = tf.Graph()
+with motor_g.as_default() as graph:
+    # g is updated silently as a side effect here!
+    tf.import_graph_def(motor_model,name = 'motor')
+    # if we don't know the name up front, need to hunt through them:
+    opnames = [op.name for op in g.get_operations()]
+    # is softmax only used for output layer? can also get the last activation layer
+    # name of final actiavtion layer:
+    last_activ = [op for op in opnames if 'activation' in op][-1]
+    # are there other suffixes like :1, :2???
+    softmax_t = graph.get_tensor_by_name(last_activ + ':0')
+
+
+def motorway_prediction(img_b64):
+    """
+    Classify a tile
+    """
+    img = deserialize_image(img_b64)
+    input_array = image_to_array(img)
+    with tf.Session(graph = motor_g) as sess:
+        preds = sess.run(
+            fetches = softmax_t,
+            feed_dict = {'motor/conv2d_1_input_1:0': input_array}
+        )
+    return preds
 
 def random_line():
     """
@@ -103,6 +115,7 @@ def random_line():
 
 # mapping of categories to models
 PREDICTION_CATEGORIES = {
+    "motorway": motorway_prediction,
     "railroad": model1,
     "gumball": model2,
     "snorlax": model1,
@@ -117,7 +130,6 @@ def lambda_handler(event, context):
     category: string, indicating which category we want to predict
     can check context.authorizer.claims for JSON Web Token data via Cognito
     """
-    return random_line() # remove when possible
     # once the models are ready, this can dispatch to them
     category = event['category']
     if not category in PREDICTION_CATEGORIES:
@@ -127,13 +139,8 @@ def lambda_handler(event, context):
             'body': f"Category {category} is not available for prediction."
         }
     the_model = PREDICTION_CATEGORIES[category]
+    pred_prob = the_model(event['tile_base64'])
     
-    # create a numeric array from the input tile:
-    img = deserialize_image(event['tile_base64'])
-    tile_array = image_to_array(img)
-    pred = the_model(tile_array)
-    # the model should return a dict of (category: prob) items?
-    pred_prob = pred[category]
     HTTP_response = {
         'statusCode': 200,
         'headers': {'Content-Type': 'text/html; charset=utf-8'},

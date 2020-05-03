@@ -2,4 +2,6 @@
 **.png
 staging/*
 **json
+__pycache__/*
+*.code-workspace
 
